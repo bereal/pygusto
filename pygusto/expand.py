@@ -126,6 +126,14 @@ class SimpleExpand(BaseExpand,
 class ReservedExpand(SimpleExpand):
     reserved_chars = RESERVED
 
+class PathExpand(BaseExpand,
+                 ExpandActions(explode_dict='keyval')):
+    expansion_prefix='/'
+    sep_keyval = '='
+    sep_explode = '/'
+    sep_expand = ','
+    reserved_chars = '/'
+
 
 PARAM_RE = re.compile(r"{([^\}]+)}")
 
@@ -164,17 +172,20 @@ def parse_part(s):
 
     return ExpandVar(name, prefix)
 
+PREFIX_TO_EXPANSION = {
+    '+': ReservedExpand,
+    '/': PathExpand,
+    }
+
 def parse_template(template):
     expands = {}
     for expr in PARAM_RE.findall(template):
-        expr_body = expr
-        
-        cls = SimpleExpand
-        cls = self.expr[0]
-        if expr.startswith('+'):
-            cls, expr_body = ReservedExpand, expr[1:]
-        elif:
-            
+        try:
+            cls = PREFIX_TO_EXPANSION[expr[0]]
+            expr_body = expr[1:]
+        except KeyError:
+            cls = SimpleExpand
+            expr_body = expr
 
         parts = (parse_part(p) for p in expr_body.split(','))
         expands[expr] = cls(parts)
