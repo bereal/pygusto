@@ -2,7 +2,7 @@ import glob
 import json
 import os
 import os.path
-from pygusto import expand
+from pygusto.expand import expand
 
 def test_all():
     tests_path = os.path.join('rfc-tests', '*.json')
