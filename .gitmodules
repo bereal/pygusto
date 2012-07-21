@@ -1,0 +1,3 @@
+[submodule "rfc-tests"]
+	path = rfc-tests
+	url = git://github.com/uri-templates/uritemplate-test.git
