@@ -16,12 +16,13 @@ def test_all():
                 variables = testcase['variables']
 
                 for template, expected in testcase['testcases']:
-                    yield check, name, level, variables, template, expected
+                    check.description = "%s: %s" % (name, template)
+                    yield check, name, variables, template, expected
                 
 
-def check(name, level, variables, template, expected):
+def check(name, variables, template, expected):
     result = expand(template, variables)
-    msg = "%s (level %s), expected %s, got %s" % (name, level, expected, result)
+    msg = "%s, expected %s, got %s" % (name, expected, result)
 
     if isinstance(expected, (str, unicode)):
         assert (result == expected), msg

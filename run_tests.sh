@@ -1,3 +1,3 @@
 #/bin/sh
 
-LEVEL=${1-1} nosetests
+LEVEL=${1-1} nosetests -v
