@@ -139,7 +139,8 @@ class BaseExpansion(object):
     show_empty_keyvalue = True
 
 
-def ExpansionBridge(default='flat', **kw):
+def ExpansionBridge(**kw):
+    default = kw.get('all', 'flat')
     actions = ('expand_dict', 'expand_list', 'expand_string',
                'explode_dict', 'explode_list')
     opts = dict({k: '{}_{}'.format(k, default) for k in actions})
@@ -167,7 +168,7 @@ class PathExpansion(ExpansionBridge(explode_dict='keyval')):
     reserved_chars = ''
 
 
-class FormQueryContExpansion(ExpansionBridge('keyval')):
+class FormQueryContExpansion(ExpansionBridge(all='keyval')):
     expansion_prefix = '&'
     sep_keyval = '='
     sep_explode = sep_parts = '&'
@@ -179,7 +180,7 @@ class FormQueryExpansion(FormQueryContExpansion):
     expansion_prefix = '?'
 
 
-class PathParamExpansion(ExpansionBridge('keyval')):
+class PathParamExpansion(ExpansionBridge(all='keyval')):
     expansion_prefix = ';'
     sep_keyval = '='
     sep_explode = sep_parts = ';'
