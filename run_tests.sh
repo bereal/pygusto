@@ -1,3 +1,3 @@
 #/bin/sh
 
-LEVEL=${1-1} nosetests -vx test_rfc.py
+LEVEL=${1-1} nosetests -v test_rfc.py

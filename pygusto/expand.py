@@ -73,14 +73,13 @@ class ExpansionMixin(object):
         return self.sep_explode.join(chain(*pairs))
 
     def expand_list_keyval(self, name, value):
-        sep = self.sep_keyval
         quote = self.quote
-        parts = ('{}{}{}'.format(name, sep, quote(v)) for v in value)
-        return self.sep_explode.join(parts)
+        parts = (quote(v) for v in value)
+        return ('{}{}{}'.format(name, self.sep_keyval, self.sep_expand.join(parts)))
 
     def expand_list_flat(self, name, value):
         quote = self.quote
-        return self.sep_explode.join(quote(v) for v in value)
+        return self.sep_expand.join(quote(v) for v in value)
 
     def explode_list_keyval(self, name, value):
         parts = (self._explode_keyval(name, v) for v in value)
@@ -110,7 +109,9 @@ class BaseExpansion(object):
             p.context = self
         expanded_parts = (p(variables) for p in self.parts)
         body = self.sep_parts.join(expanded_parts)
-        return "{}{}".format(self.expansion_prefix, body)
+        if body:
+            return "{}{}".format(self.expansion_prefix, body)
+        return ""
 
     @property
     def names(self):
@@ -144,6 +145,7 @@ class PathExpansion(ExpansionBridge(explode_dict='keyval',
     reserved_chars = '/'
 
 class FormQueryContExpansion(ExpansionBridge('keyval')):
+
     expansion_prefix = '&'
     sep_keyval = '='
     sep_explode = sep_parts = '&'
@@ -159,6 +161,7 @@ class PathParamExpansion(ExpansionBridge('keyval')):
     sep_explode = sep_parts = ';'
     sep_expand = ','
     reserved_chars = ''
+    show_empty_keyvalue = False
 
 class LabelExpansion(ExpansionBridge(expand_dict='keyval')):
     expansion_prefix = '.'
