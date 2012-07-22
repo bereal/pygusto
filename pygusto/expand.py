@@ -1,47 +1,56 @@
 import collections
 import re
 import urllib
+from bridge import Bridge
 from itertools import chain
-from functools import partial
 
 RESERVED = ":/?#[]@!$&'()*+,;="
 
+class BasePart(object):
+    def __init__(self, name):
+        self.name = name
 
-class ExpandVar(object):
+    def __call__(self, variables):
+        name = self.name
+        value = variables[self.name]
+        if isinstance(value, collections.Mapping):
+            return self.on_dict(name, value)
+        elif isinstance(value, (str, unicode)):
+            return self.on_string(name, value)
+        elif isinstance(value, collections.Sequence):
+            return self.on_list(name, value)
+        else:
+            raise ValueError("Cannot expand {}".format(value))
+
+class PartSingle(BasePart, Bridge(on_string='context.expand_string',
+                                  on_list='context.expand_list',
+                                  on_dict='context.expand_dict')):
+    pass
+
+class PartPrefix(BasePart):
     def __init__(self, name, prefix):
         self.name = name
         self.prefix = prefix
 
-    def __call__(self, variables, visitor):
-        name = self.name
-        value = variables.get(name)
-        if isinstance(value, collections.Mapping):
-            return visitor.expand_dict(name, value)
-        elif isinstance(value, (str, unicode)):
-            return visitor.expand_string(name, value[:self.prefix])
-        elif isinstance(value, collections.Sequence):
-            return visitor.expand_list(name, value)
-        else:
-            raise ValueError("Cannot expand {}".format(value))
+    def on_string(self, name, value):
+        return self.context.expand_string(name, value[:self.prefix])
 
-class ExpandExplode(object):
-    def __init__(self, name):
-        self.name = name
+class PartExplode(BasePart, Bridge(on_list='context.explode_list',
+                                   on_dict='context.explode_dict')):
 
-    def __call__(self, variables, visitor):
-        name = self.name
-        value = variables.get(name)
-        if isinstance(value, collections.Mapping):
-            return visitor.explode_dict(name, value)
-        elif isinstance(value, (str, unicode)):
-            raise ValueError("Can't explode string: {}".format(value))
-        elif isinstance(value, collections.Sequence):
-            return visitor.explode_list(name, value)
+    def on_string(self, name, value):
+        raise ValueError("Cannot explode string {}".format(value))
 
-def ExpandActions(**opts):
+class ExpansionMixin(object):
     def quote(self, val):
         return urllib.quote(val, safe=self.reserved_chars)
 
+    def _explode_keyval(self, name, value):
+        if value or self.show_empty_keyvalue:
+            return ''.join((name, self.sep_keyval, self.quote(value)))
+
+        return name
+    
     def expand_dict_flat(self, name, value):
         quote = self.quote
         pairs = ((k, quote(v)) for k, v in value.iteritems())
@@ -51,17 +60,15 @@ def ExpandActions(**opts):
         quote = self.quote
         pairs = ((k, quote(v)) for k, v in value.iteritems())
         val = self.sep_expand.join(chain(*pairs))
-        return "{}{}{}".format(name, self.sep_keyval, val)
+        return self._explode_keyval(name, val)
 
-    def explode_dict_keyval(self, name, value):
-        quote = self.quote
-        sep = self.sep_keyval
-        parts = ('{}{}{}'.format(k, sep, quote(v)) for k, v in value)
+    def explode_dict_keyval(self, name, value):            
+        explode = self._eplode_keyval
+        parts = (explode(k, v) for k, v in value)
         return self.sep_explode.join(parts)
 
     def explode_dict_flat(self, name, value):
         quote = self.quote
-        print value
         pairs = ((k, quote(v)) for k, v in value.iteritems())
         return self.sep_explode.join(chain(*pairs))
 
@@ -76,9 +83,7 @@ def ExpandActions(**opts):
         return self.sep_explode.join(quote(v) for v in value)
 
     def explode_list_keyval(self, name, value):
-        quote = self.quote
-        sep = self.sep_keyval
-        parts = (''.join((name, sep, quote(v))) for v in value)
+        parts = (self._explode_keyval(name, v) for v in value)
         return self.sep_explode.join(parts)
 
     def explode_list_flat(self, name, value):
@@ -89,60 +94,98 @@ def ExpandActions(**opts):
         return self.quote(value)
 
     def expand_string_keyval(self, name, value):
-        return ''.join((name, self.sep_keyval, value))
+        return self._explode_keyval(name, value)
 
-    class_dict = {'quote': quote}
-    for action in ('expand_string', 'expand_list', 'expand_dict'):
-        value = opts.get(action, 'flat')
-        class_dict[action] = locals()['{}_{}'.format(action, value)]
-
-    return type('_Expander', (), class_dict)
-
-def st_partial(*args, **kw):
-    return staticmethod(partial(*args, **kw))
-
-
-class BaseExpand(object):
+class BaseExpansion(object):
     def __init__(self, parts):
         self.parts = list(parts)
 
+    def add_parts(self, parts):
+        for p in parts:
+            parts.context = self
+            self.parts.append(p)
+
     def __call__(self, variables):
-        expanded_parts = (p(variables, self) for p in self.parts)
-        body = self.sep_explode.join(expanded_parts)
+        for p in self.parts:
+            p.context = self
+        expanded_parts = (p(variables) for p in self.parts)
+        body = self.sep_parts.join(expanded_parts)
         return "{}{}".format(self.expansion_prefix, body)
 
     @property
     def names(self):
         return set(p.name for p in self.parts)
 
-class SimpleExpand(BaseExpand,
-                   ExpandActions(expand_dict='keyval')):
+    show_empty_keyvalue = True
+    
+def ExpansionBridge(default='flat', **kw):
+    actions = ('expand_dict', 'expand_list', 'expand_string',
+               'explode_dict', 'explode_list')
+    opts = dict({k: '{}_{}'.format(k, default) for k in actions})
+    opts.update({k: '{}_{}'.format(k, v) for k, v in kw.iteritems()})
+    return type('_ExpansionBridge', (BaseExpansion, ExpansionMixin, Bridge(**opts)), {})
+
+class SimpleExpansion(ExpansionBridge(expand_dict='keyval')):
     expansion_prefix = ""
     sep_keyval = "="
-    sep_explode = ','
+    sep_explode = sep_parts = ','
     sep_expand = ','
     reserved_chars = ''
 
-class ReservedExpand(SimpleExpand):
+class ReservedExpansion(SimpleExpansion):
     reserved_chars = RESERVED
 
-class PathExpand(BaseExpand,
-                 ExpandActions(explode_dict='keyval')):
+class PathExpansion(ExpansionBridge(explode_dict='keyval',
+                                    expand_dict='keyval')):
     expansion_prefix='/'
     sep_keyval = '='
-    sep_explode = '/'
+    sep_explode = sep_parts =  '/'
     sep_expand = ','
     reserved_chars = '/'
 
+class FormQueryContExpansion(ExpansionBridge('keyval')):
+    expansion_prefix = '&'
+    sep_keyval = '='
+    sep_explode = sep_parts = '&'
+    sep_expand = ','
+    reserved_chars = ''
+
+class FormQueryExpansion(FormQueryContExpansion):
+    expansion_prefix = '?'
+
+class PathParamExpansion(ExpansionBridge('keyval')):
+    expansion_prefix = ';'
+    sep_keyval = '='
+    sep_explode = sep_parts = ';'
+    sep_expand = ','
+    reserved_chars = ''
+
+class LabelExpansion(ExpansionBridge(expand_dict='keyval')):
+    expansion_prefix = '.'
+    sep_keyval = '='
+    sep_explode = sep_parts =  '.'
+    sep_expand = ','
+    reserved_chars = ''
+
+class FragmentExpansion(ExpansionBridge(explode_dict='keyval')):
+    expansion_prefix = '#'
+    sep_keyval = '='
+    sep_explode = ';'
+    sep_expand = sep_parts = ','
+    reserved_chars = '/!'
+    show_empty_keyvalue = False
+                                        
 
 PARAM_RE = re.compile(r"{([^\}]+)}")
-
 
 class _Template(object):
     def __init__(self, template_str, compiled_expands):
         self._template = template_str
         self._expands = compiled_expands
-        self._vars = set.union(*[e.names for e in compiled_expands.values()])
+        vars = set()
+        for e in compiled_expands.values():
+            vars.update(e.names)
+        self._vars = vars
 
     @property
     def vars(self):
@@ -161,20 +204,26 @@ class _Template(object):
 
 def parse_part(s):
     if s.endswith('*'):
-        return ExpandExplode(name=s[:-1])
+        return PartExplode(name=s[:-1])
 
     prefix = None
+    name = None
     for i, v in enumerate(s.split(':', 1)):
         if i:
-            prefix = int(v)
+            return PartPrefix(name, int(prefix))
         else:
             name = v
 
-    return ExpandVar(name, prefix)
+    return PartSingle(name)
 
 PREFIX_TO_EXPANSION = {
-    '+': ReservedExpand,
-    '/': PathExpand,
+    '+': ReservedExpansion,
+    '/': PathExpansion,
+    '&' : FormQueryContExpansion,
+    '?': FormQueryExpansion,
+    ';': PathParamExpansion,
+    '.': LabelExpansion,
+    '#': FragmentExpansion
     }
 
 def parse_template(template):
@@ -184,11 +233,12 @@ def parse_template(template):
             cls = PREFIX_TO_EXPANSION[expr[0]]
             expr_body = expr[1:]
         except KeyError:
-            cls = SimpleExpand
+            cls = SimpleExpansion
             expr_body = expr
 
         parts = (parse_part(p) for p in expr_body.split(','))
-        expands[expr] = cls(parts)
+        if parts:
+            expands[expr] = cls(parts)
 
     return _Template(template, expands)
 
