@@ -206,8 +206,8 @@ class FragmentExpansion(ExpansionBridge(explode_dict='keyval')):
     show_empty_keyvalue = False
 
 
-PARAM_RE = re.compile(r"{([^\}]+)}")
-
+_VAR_RE=r'[a-zA-Z0-9_.%]+(\*|:[0-9]+)?'
+PARAM_RE = re.compile(r"{{([\+\?&/.;#]?({0},)*{0})}}".format(_VAR_RE))
 
 class _Template(object):
     def __init__(self, template_str, compiled_expands):
@@ -259,8 +259,12 @@ PREFIX_TO_EXPANSION = {
 
 
 def parse_template(template):
+    check = PARAM_RE.sub('', template)
+    if '{' in check or '}' in check:
+        raise ValueError("Syntax error")
     expands = {}
     for expr in PARAM_RE.findall(template):
+        expr = expr[0]
         try:
             cls = PREFIX_TO_EXPANSION[expr[0]]
             expr_body = expr[1:]
