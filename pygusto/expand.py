@@ -12,15 +12,19 @@ class BasePart(object):
 
     def __call__(self, variables):
         name = self.name
-        value = variables[self.name]
+        value = variables.get(self.name)
+        if value is None: return None
         if isinstance(value, collections.Mapping):
+            if not value: return None
             return self.on_dict(name, value)
         elif isinstance(value, (str, unicode)):
             return self.on_string(name, value)
         elif isinstance(value, collections.Sequence):
+            if not value: return None
             return self.on_list(name, value)
         else:
-            raise ValueError("Cannot expand {}".format(value))
+            return self.on_string(name, str(value))
+#            raise ValueError("Cannot expand {}".format(value))
 
 class PartSingle(BasePart, Bridge(on_string='context.expand_string',
                                   on_list='context.expand_list',
@@ -38,8 +42,9 @@ class PartPrefix(BasePart):
 class PartExplode(BasePart, Bridge(on_list='context.explode_list',
                                    on_dict='context.explode_dict')):
 
-    def on_string(self, name, value):
-        raise ValueError("Cannot explode string {}".format(value))
+    pass
+#    def on_string(self, name, value):
+#        raise ValueError("Cannot explode string {}".format(value))
 
 class ExpansionMixin(object):
     def quote(self, val):
@@ -60,11 +65,11 @@ class ExpansionMixin(object):
         quote = self.quote
         pairs = ((k, quote(v)) for k, v in value.iteritems())
         val = self.sep_expand.join(chain(*pairs))
-        return self._explode_keyval(name, val)
+        return ''.join((name, self.sep_keyval, val))
 
-    def explode_dict_keyval(self, name, value):            
-        explode = self._eplode_keyval
-        parts = (explode(k, v) for k, v in value)
+    def explode_dict_keyval(self, name, value):
+        explode = self._explode_keyval
+        parts = (explode(k, v) for k, v in value.iteritems())
         return self.sep_explode.join(parts)
 
     def explode_dict_flat(self, name, value):
@@ -93,6 +98,8 @@ class ExpansionMixin(object):
         return self.quote(value)
 
     def expand_string_keyval(self, name, value):
+        if value is None:
+            return None
         return self._explode_keyval(name, value)
 
 class BaseExpansion(object):
@@ -108,10 +115,12 @@ class BaseExpansion(object):
         for p in self.parts:
             p.context = self
         expanded_parts = (p(variables) for p in self.parts)
+        expanded_parts = [p for p in expanded_parts if p is not None]
+        if not expanded_parts:
+            return ''
         body = self.sep_parts.join(expanded_parts)
-        if body:
-            return "{}{}".format(self.expansion_prefix, body)
-        return ""
+
+        return "{}{}".format(self.expansion_prefix, body)
 
     @property
     def names(self):
@@ -126,7 +135,7 @@ def ExpansionBridge(default='flat', **kw):
     opts.update({k: '{}_{}'.format(k, v) for k, v in kw.iteritems()})
     return type('_ExpansionBridge', (BaseExpansion, ExpansionMixin, Bridge(**opts)), {})
 
-class SimpleExpansion(ExpansionBridge(expand_dict='keyval')):
+class SimpleExpansion(ExpansionBridge(explode_dict='keyval')):
     expansion_prefix = ""
     sep_keyval = "="
     sep_explode = sep_parts = ','
@@ -136,16 +145,14 @@ class SimpleExpansion(ExpansionBridge(expand_dict='keyval')):
 class ReservedExpansion(SimpleExpansion):
     reserved_chars = RESERVED
 
-class PathExpansion(ExpansionBridge(explode_dict='keyval',
-                                    expand_dict='keyval')):
+class PathExpansion(ExpansionBridge(explode_dict='keyval')):
     expansion_prefix='/'
     sep_keyval = '='
     sep_explode = sep_parts =  '/'
     sep_expand = ','
-    reserved_chars = '/'
+    reserved_chars = ''
 
 class FormQueryContExpansion(ExpansionBridge('keyval')):
-
     expansion_prefix = '&'
     sep_keyval = '='
     sep_explode = sep_parts = '&'
@@ -163,7 +170,7 @@ class PathParamExpansion(ExpansionBridge('keyval')):
     reserved_chars = ''
     show_empty_keyvalue = False
 
-class LabelExpansion(ExpansionBridge(expand_dict='keyval')):
+class LabelExpansion(ExpansionBridge(explode_dict='keyval')):
     expansion_prefix = '.'
     sep_keyval = '='
     sep_explode = sep_parts =  '.'
@@ -173,9 +180,9 @@ class LabelExpansion(ExpansionBridge(expand_dict='keyval')):
 class FragmentExpansion(ExpansionBridge(explode_dict='keyval')):
     expansion_prefix = '#'
     sep_keyval = '='
-    sep_explode = ';'
+    sep_explode = ','
     sep_expand = sep_parts = ','
-    reserved_chars = '/!'
+    reserved_chars = '/!,.;'
     show_empty_keyvalue = False
                                         
 
@@ -209,11 +216,10 @@ def parse_part(s):
     if s.endswith('*'):
         return PartExplode(name=s[:-1])
 
-    prefix = None
     name = None
     for i, v in enumerate(s.split(':', 1)):
         if i:
-            return PartPrefix(name, int(prefix))
+            return PartPrefix(name, int(v))
         else:
             name = v
 
