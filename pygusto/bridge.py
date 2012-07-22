@@ -1,15 +1,14 @@
-
 class AttrDispatch(object):
     def __init__(self, *path):
         self.path = path
-        
+
     def __get__(self, inst, cls):
         result = inst
         for p in self.path:
             result = getattr(result, p)
 
         return result
-            
+
 
 def Bridge(**mapping):
     class_dict = {}

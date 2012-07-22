@@ -6,6 +6,7 @@ from itertools import chain
 
 RESERVED = ":/?#[]@!$&'()*+,;="
 
+
 class BasePart(object):
     def __init__(self, name):
         self.name = name
@@ -13,7 +14,8 @@ class BasePart(object):
     def __call__(self, variables):
         name = self.name
         value = variables.get(self.name)
-        if value is None: return None
+        if value is None:
+            return None
         if isinstance(value, collections.Mapping):
             if not value: return None
             return self.on_dict(name, value)
@@ -24,12 +26,13 @@ class BasePart(object):
             return self.on_list(name, value)
         else:
             return self.on_string(name, str(value))
-#            raise ValueError("Cannot expand {}".format(value))
+
 
 class PartSingle(BasePart, Bridge(on_string='context.expand_string',
                                   on_list='context.expand_list',
                                   on_dict='context.expand_dict')):
     pass
+
 
 class PartPrefix(BasePart):
     def __init__(self, name, prefix):
@@ -40,17 +43,17 @@ class PartPrefix(BasePart):
         raise ValueError("Cannot expand {}:{} as {}".format(name, self.prefix, value))
 
     on_list = on_dict
-        
+
     def on_string(self, name, value):
         return self.context.expand_string(name, value[:self.prefix])
+
 
 class PartExplode(BasePart, Bridge(on_list='context.explode_list',
                                    on_dict='context.explode_dict',
                                    on_string='context.expand_string')):
 
     pass
-#    def on_string(self, name, value):
-#        raise ValueError("Cannot explode string {}".format(value))
+
 
 class ExpansionMixin(object):
     def quote(self, val):
@@ -61,7 +64,7 @@ class ExpansionMixin(object):
             return ''.join((name, self.sep_keyval, self.quote(value)))
 
         return name
-    
+
     def expand_dict_flat(self, name, value):
         quote = self.quote
         pairs = ((k, quote(v)) for k, v in value.iteritems())
@@ -108,6 +111,7 @@ class ExpansionMixin(object):
             return None
         return self._explode_keyval(name, value)
 
+
 class BaseExpansion(object):
     def __init__(self, parts):
         self.parts = list(parts)
@@ -133,13 +137,15 @@ class BaseExpansion(object):
         return set(p.name for p in self.parts)
 
     show_empty_keyvalue = True
-    
+
+
 def ExpansionBridge(default='flat', **kw):
     actions = ('expand_dict', 'expand_list', 'expand_string',
                'explode_dict', 'explode_list')
     opts = dict({k: '{}_{}'.format(k, default) for k in actions})
     opts.update({k: '{}_{}'.format(k, v) for k, v in kw.iteritems()})
     return type('_ExpansionBridge', (BaseExpansion, ExpansionMixin, Bridge(**opts)), {})
+
 
 class SimpleExpansion(ExpansionBridge(explode_dict='keyval')):
     expansion_prefix = ""
@@ -148,15 +154,18 @@ class SimpleExpansion(ExpansionBridge(explode_dict='keyval')):
     sep_expand = ','
     reserved_chars = ''
 
+
 class ReservedExpansion(SimpleExpansion):
     reserved_chars = RESERVED
 
+
 class PathExpansion(ExpansionBridge(explode_dict='keyval')):
-    expansion_prefix='/'
+    expansion_prefix = '/'
     sep_keyval = '='
-    sep_explode = sep_parts =  '/'
+    sep_explode = sep_parts = '/'
     sep_expand = ','
     reserved_chars = ''
+
 
 class FormQueryContExpansion(ExpansionBridge('keyval')):
     expansion_prefix = '&'
@@ -165,8 +174,10 @@ class FormQueryContExpansion(ExpansionBridge('keyval')):
     sep_expand = ','
     reserved_chars = ''
 
+
 class FormQueryExpansion(FormQueryContExpansion):
     expansion_prefix = '?'
+
 
 class PathParamExpansion(ExpansionBridge('keyval')):
     expansion_prefix = ';'
@@ -176,12 +187,14 @@ class PathParamExpansion(ExpansionBridge('keyval')):
     reserved_chars = ''
     show_empty_keyvalue = False
 
+
 class LabelExpansion(ExpansionBridge(explode_dict='keyval')):
     expansion_prefix = '.'
     sep_keyval = '='
-    sep_explode = sep_parts =  '.'
+    sep_explode = sep_parts = '.'
     sep_expand = ','
     reserved_chars = ''
+
 
 class FragmentExpansion(ExpansionBridge(explode_dict='keyval')):
     expansion_prefix = '#'
@@ -190,9 +203,10 @@ class FragmentExpansion(ExpansionBridge(explode_dict='keyval')):
     sep_expand = sep_parts = ','
     reserved_chars = '/!,.;'
     show_empty_keyvalue = False
-                                        
+
 
 PARAM_RE = re.compile(r"{([^\}]+)}")
+
 
 class _Template(object):
     def __init__(self, template_str, compiled_expands):
@@ -231,15 +245,17 @@ def parse_part(s):
 
     return PartSingle(name)
 
+
 PREFIX_TO_EXPANSION = {
     '+': ReservedExpansion,
     '/': PathExpansion,
-    '&' : FormQueryContExpansion,
+    '&': FormQueryContExpansion,
     '?': FormQueryExpansion,
     ';': PathParamExpansion,
     '.': LabelExpansion,
     '#': FragmentExpansion
     }
+
 
 def parse_template(template):
     expands = {}
