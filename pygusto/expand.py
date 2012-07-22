@@ -6,8 +6,18 @@ from itertools import chain
 
 RESERVED = ":/?#[]@!$&'()*+,;="
 
+######################################################################
+# By parts of an expression I mean pieces between commas, e.g.
+# Simple part: "varname"
+# Prefix part: "varname:3"
+# Explode part: "varname*"
+######################################################################
 
 class BasePart(object):
+    '''
+    A base class for all parts;
+    dispatches the calls according to the data tyle
+    '''
     def __init__(self, name):
         self.name = name
 
@@ -56,6 +66,17 @@ class PartExplode(BasePart, Bridge(on_list='context.explode_list',
 
 
 class ExpansionMixin(object):
+    '''
+    Expansion utility function.
+    This is supposed to be used as a mixin in a class where
+    all the required values are defined:
+
+    reserved_chars : what not to escape in values
+    sep_expand     : separator between simple expand elements
+    sep_explode    : separator between explode elements (e.g. '&' for queries)
+    sep_keyval     : separator between name and value (e.g. '=')
+    sep_parts      : what to put between expanded parts (almost always == sep_explode)
+    '''
     def quote(self, val):
         return urllib.quote(val, safe=self.reserved_chars)
 
@@ -66,47 +87,69 @@ class ExpansionMixin(object):
         return name
 
     def expand_dict_flat(self, name, value):
+        '''
+        {"face": {"eyes": "green", "hair": "gray"}} => "eyes,green,color,gray"
+        '''
         quote = self.quote
         pairs = ((k, quote(v)) for k, v in value.iteritems())
         return self.sep_expand.join(chain(*pairs))
 
     def expand_dict_keyval(self, name, value):
+        '''
+        {"face": {"eyes": "green", "hair": "gray"}} => "face=eyes,green,color,gray"
+        '''
         quote = self.quote
         pairs = ((k, quote(v)) for k, v in value.iteritems())
         val = self.sep_expand.join(chain(*pairs))
         return ''.join((name, self.sep_keyval, val))
 
-    def explode_dict_keyval(self, name, value):
+    def explode_dict(self, name, value):
+        '''
+        {"face": {"eyes": "green", "hair": "gray"}} => "eyes=green&color=gray"
+        '''
         explode = self._explode_keyval
         parts = (explode(k, v) for k, v in value.iteritems())
         return self.sep_explode.join(parts)
 
-    def explode_dict_flat(self, name, value):
-        quote = self.quote
-        pairs = ((k, quote(v)) for k, v in value.iteritems())
-        return self.sep_explode.join(chain(*pairs))
-
     def expand_list_keyval(self, name, value):
+        '''
+        {"colors": ["red", "green", "blue"]} => "colors=red,green,blue"
+        '''
         quote = self.quote
         parts = (quote(v) for v in value)
         return ('{}{}{}'.format(name, self.sep_keyval, self.sep_expand.join(parts)))
 
     def expand_list_flat(self, name, value):
+        '''
+        {"colors": ["red", "green", "blue"]} => "red,green,blue"
+        '''
         quote = self.quote
         return self.sep_expand.join(quote(v) for v in value)
 
     def explode_list_keyval(self, name, value):
+        '''
+        {"colors": ["red", "green", "blue"]} => "colors=red&colors=green&colors=blue"
+        '''
         parts = (self._explode_keyval(name, v) for v in value)
         return self.sep_explode.join(parts)
 
     def explode_list_flat(self, name, value):
+        '''
+        {"colors": ["red", "green", "blue"]} => "red/green/blue"
+        '''
         quote = self.quote
         return self.sep_explode.join(quote(v) for v in value)
 
     def expand_string_flat(self, name, value):
+        '''
+        {"key": "value"} => "value"
+        '''
         return self.quote(value)
 
     def expand_string_keyval(self, name, value):
+        '''
+        {"key": "value"} => "key=value"
+        '''
         if value is None:
             return None
         return self._explode_keyval(name, value)
@@ -141,14 +184,13 @@ class BaseExpansion(object):
 
 def ExpansionBridge(**kw):
     default = kw.get('all', 'flat')
-    actions = ('expand_dict', 'expand_list', 'expand_string',
-               'explode_dict', 'explode_list')
+    actions = ('expand_dict', 'expand_list', 'expand_string', 'explode_list')
     opts = dict({k: '{}_{}'.format(k, default) for k in actions})
     opts.update({k: '{}_{}'.format(k, v) for k, v in kw.iteritems()})
     return type('_ExpansionBridge', (BaseExpansion, ExpansionMixin, Bridge(**opts)), {})
 
 
-class SimpleExpansion(ExpansionBridge(explode_dict='keyval')):
+class SimpleExpansion(ExpansionBridge()):
     expansion_prefix = ""
     sep_keyval = "="
     sep_explode = sep_parts = ','
@@ -160,7 +202,7 @@ class ReservedExpansion(SimpleExpansion):
     reserved_chars = RESERVED
 
 
-class PathExpansion(ExpansionBridge(explode_dict='keyval')):
+class PathExpansion(ExpansionBridge()):
     expansion_prefix = '/'
     sep_keyval = '='
     sep_explode = sep_parts = '/'
@@ -189,7 +231,7 @@ class PathParamExpansion(ExpansionBridge(all='keyval')):
     show_empty_keyvalue = False
 
 
-class LabelExpansion(ExpansionBridge(explode_dict='keyval')):
+class LabelExpansion(ExpansionBridge()):
     expansion_prefix = '.'
     sep_keyval = '='
     sep_explode = sep_parts = '.'
@@ -197,7 +239,7 @@ class LabelExpansion(ExpansionBridge(explode_dict='keyval')):
     reserved_chars = ''
 
 
-class FragmentExpansion(ExpansionBridge(explode_dict='keyval')):
+class FragmentExpansion(ExpansionBridge()):
     expansion_prefix = '#'
     sep_keyval = '='
     sep_explode = ','
