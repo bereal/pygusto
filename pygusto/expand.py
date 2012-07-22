@@ -36,11 +36,17 @@ class PartPrefix(BasePart):
         self.name = name
         self.prefix = prefix
 
+    def on_dict(self, name, value):
+        raise ValueError("Cannot expand {}:{} as {}".format(name, self.prefix, value))
+
+    on_list = on_dict
+        
     def on_string(self, name, value):
         return self.context.expand_string(name, value[:self.prefix])
 
 class PartExplode(BasePart, Bridge(on_list='context.explode_list',
-                                   on_dict='context.explode_dict')):
+                                   on_dict='context.explode_dict',
+                                   on_string='context.expand_string')):
 
     pass
 #    def on_string(self, name, value):
@@ -253,4 +259,7 @@ def parse_template(template):
 
 
 def expand(template_str, variables):
-     return parse_template(template_str).expand(variables)
+    try:
+        return parse_template(template_str).expand(variables)
+    except:
+        return None
